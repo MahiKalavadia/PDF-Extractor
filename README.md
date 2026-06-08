@@ -1,4 +1,4 @@
-# PDF EXTRACTOR using LLM Call and Groq API
+# Tax Invoice PDF EXTRACTOR using LLM Call and Groq API
 
 
 ## Setup & Run Locally
