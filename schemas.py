@@ -1,0 +1,43 @@
+from pydantic import BaseModel
+from typing import Optional
+
+class Response(BaseModel):
+    irn: str = ""
+    ackno: str = ""
+    ackdate: str = ""
+    invoice_number: str = ""
+    invoice_date: str = ""
+    taxable_value: float = 0.0
+    cgst_amount: float = 0.0
+    sgst_amount: float = 0.0
+    igst_amount: float = 0.0
+    total_invoice: float = 0.0
+    dealer_code: str = ""
+    hiib_misp_code: str = ""
+    account_holders_name: str = ""
+    bank_name: str = ""
+    account_number: str = ""    
+    branch: str = ""
+    bank_ifsc_code: str = ""
+    micr_code: str = ""
+    hiib_gstin: str = ""
+    dealer_gstin: str = ""
+    dealer_pincode: str = ""      
+    hiib_pincode: str = ""        
+    hiib_state_code: str = ""
+    dealer_state_code: str = ""
+    msme: str = ""
+    dealer_pan: str = ""
+    sac: str = ""
+    consigner_details: str = ""
+    consigner_address: str = ""
+    consigner_pincode: str = ""   
+    buyers_name: str = ""        
+    buyers_address: str = ""      
+    buyers_pincode: str = ""      
+    consigner_place_of_supply: str = ""
+    consigner_place_of_buyer: str = ""
+    description: str = ""
+    oem: str = ""
+    quantity: int = 0
+    period_of_service: str = ""
