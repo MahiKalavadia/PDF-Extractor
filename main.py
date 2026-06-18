@@ -2,6 +2,10 @@ from fastapi import FastAPI, UploadFile, File
 from fastapi import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from groq import Groq
+import cv2, re
+import Levenshtein
+import numpy as np
+from pyzbar.pyzbar import decode
 from dotenv import load_dotenv
 import json, os, io, logging
 from logging.handlers import RotatingFileHandler
@@ -26,6 +30,7 @@ file_handler = RotatingFileHandler(
     backupCount=3,
     encoding="utf-8"
 )
+
 file_handler.setFormatter(log_formatter)
 
 logging.basicConfig(
@@ -60,8 +65,14 @@ client = Groq(api_key=api_key)
 async def info(files:UploadFile=File(...)):
             logger.info(f"Received file: {files.filename}")
             read = await files.read()
-            images = convert_from_bytes(read, poppler_path=r"C:\Program Files\poppler-26.02.0\Library\bin")
-            for image in images:
+            images = convert_from_bytes(read, dpi=400,poppler_path=r"C:\Program Files\poppler-26.02.0\Library\bin")
+            open_cv_image = np.array(images[0])
+            gray_image = cv2.cvtColor(open_cv_image, cv2.COLOR_RGB2GRAY)
+            decoded_objects = decode(gray_image)
+            qr_data = decoded_objects[0].data.decode('utf-8')
+            irn_match = re.search(r"[a-fA-F0-9]{64}", qr_data)
+            for page_no, image in enumerate(images,start=1):
+                print(f"Processing page {page_no}")
                 buffer = io.BytesIO()
                 image.save(buffer, format="JPEG")
                 buffer.seek(0)
@@ -340,6 +351,10 @@ async def info(files:UploadFile=File(...)):
                         retry_content = json.loads(retry_response.choices[0].message.content or "{}")
                         fallback_irn = retry_content.get("irn", "")
                         fallback_irn = normalize_irncode(fallback_irn)
+                        if fallback_irn == irn_match:
+                            content["irn"] == fallback_irn
+                        else:
+                            content["irn"] == irn_match
                         if validate_irncode(fallback_irn):
                             content["irn"] = fallback_irn
                         else:
