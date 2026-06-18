@@ -3,8 +3,8 @@ from typing import Optional
 
 class Response(BaseModel):
     irn: str = ""
-    ackno: str = ""
-    ackdate: str = ""
+    ack_no: str = ""
+    ack_date: str = ""
     invoice_number: str = ""
     invoice_date: str = ""
     taxable_value: float = 0.0
