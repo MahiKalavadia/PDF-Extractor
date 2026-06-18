@@ -23,6 +23,7 @@ def validate_dealercode(code: str) -> bool:
 
 
 def validate_hiibmispcode(hiib: str) -> bool:
+    hiib = hiib.replace(" ","")
     return bool(re.fullmatch(r"HIIB[-\s]MHY-[0-9]{4}", hiib))
 
 
