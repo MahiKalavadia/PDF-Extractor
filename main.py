@@ -63,6 +63,7 @@ api_key = os.environ.get("GROQ_API_KEY")
 client = Groq(api_key=api_key)
 
 def find_irn(text: str) -> str:
+        """Finding irn value inside"""
         if not text:
             return ""
         m = re.search(r'[0-9a-fA-F]{64}', text)
@@ -71,6 +72,7 @@ def find_irn(text: str) -> str:
         return ""
 
 def extract_irn_from_qr(pil_image) -> str:
+    """Extracting irn after scanning qr code from image"""
     cv_image = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
     gray = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
 
@@ -85,21 +87,7 @@ def extract_irn_from_qr(pil_image) -> str:
         logger.warning(f"pyzbar failed: {e}")
     return ""
 
-@app.post("/information")
-async def info(files:UploadFile=File(...)):
-            logger.info(f"Received file: {files.filename}")
-            read = await files.read()
-            images = convert_from_bytes(read, dpi=400, poppler_path=r"C:\Program Files\poppler-26.02.0\Library\bin")
-            qr_irn = extract_irn_from_qr(images)
-            logger.info(f"QR IRN: {qr_irn or 'not found'}")
-            dict = {}
-            for page_no, image1 in enumerate(images):
-                buffer = io.BytesIO()
-                image1.save(buffer, format="JPEG")
-                buffer.seek(0)
-                base64_image = base64.b64encode(buffer.getvalue()).decode()
-                logger.info(f"Page {page_no} converted to base64 image")
-                prompt ="""
+prompt ="""
                 You are an expert PDF extractor
                     Action: Perform extraction from the uploaded files:
                     * General full forms: HIIB: Hyundia India Insurance Groking
@@ -135,6 +123,7 @@ async def info(files:UploadFile=File(...)):
                     - dealer_code: look for compressed/concatenated values or mentioned as DEALER CODE
                     - hiib_misp_code:
                     - format HIIB-MHY-XXXX. If found as MHY-XXXX, prepend "HIIB-"
+                    - it can be mentioned as HIIB-MISP-Code or HIIB-MISP or MISP-code
                     ### Bank details
                     Example: Company's Bank details
                     Ac. Holders name: NATASHA AUTOMOBILES PRIVATE LIMITED
@@ -206,7 +195,7 @@ async def info(files:UploadFile=File(...)):
                     - msme: if split across lines, concatenate
                     - dealer_pan:
                     - sac:
-                **Service:
+                **Service Provider:
                 Example:
                 Consignee (Ship to)
                 HYUNDAI INDIA INSURANCE BROKING PRIVATE LTD
@@ -216,15 +205,18 @@ async def info(files:UploadFile=File(...)):
                 PAN/IT No : AAGCH0310P
                 State Name : Haryana, Code : 06
                     - consigner_details:
+                    - They are service providers
                     # Look for the section where Consignee (Ship to) is written and identify its details and extract it
                     # In the above example:  HYUNDAI INDIA INSURANCE BROKING PRIVATE LTD
                                             16th Floor, Building No. 9A, DLF Cyber City, DLF
                                             Phase-III, Gurugram - 122001 this is the consignee details
                     - consigner_address:
+                    They are service providers
                     # Look for the section where Consignee (Ship to) is written and identify its address and extract it
                     # In the example above, 16th Floor, Building No. 9A, DLF Cyber City, DLF
                                             Phase-III, Gurugram - 122001 this is the consignee address
                     - consigner_pincode:
+                    They are service providers
                     # Look for the section where Consignee (Ship to) is written and identify its 6 digit pincode inside address and extract it
                     # In the example above, 122001 is the consignee pincode
                 **Buyer
@@ -236,6 +228,7 @@ async def info(files:UploadFile=File(...)):
                 GSTIN/UIN : 06AAGCH0310P1ZP
                 PAN/IT No : AAGCH0310P
                 State Name : Haryana, Code : 06
+                *** Always look for the column/section where buyer (bill to ) is written
                     - buyers_name:
                     # Always look for the column where Buyer (Bill to) Hyundia India Insurance Broking is written
                     # Identify its name and extract its value.
@@ -328,6 +321,30 @@ async def info(files:UploadFile=File(...)):
                     "period_of_service": ""
                     }
                 """
+
+@app.post("/information")
+async def info(files:UploadFile=File(...)):
+            """Extracting information from invoices pdf uploaded by user by first converting pdf to image 
+            through pdf2image and then extracting data and added fallback to retry extracting some values if validation fails"""
+            logger.info(f"Received file: {files.filename}")
+            read = await files.read()
+            images = convert_from_bytes(read, dpi=400, poppler_path=r"C:\Program Files\poppler-26.02.0\Library\bin")
+            qr_irn = ""
+            for img in images:
+                qr_irn = extract_irn_from_qr(img)
+                if qr_irn:
+                    logger.info(f"QR IRN found : {qr_irn}")
+                    break
+            logger.info(f"QR IRN: {qr_irn or 'not found'}")
+
+            extracted_content = {}
+            for page_no, image1 in enumerate(images, start=1):
+                buffer = io.BytesIO()
+                image1.save(buffer, format="JPEG")
+                buffer.seek(0)
+                base64_image = base64.b64encode(buffer.getvalue()).decode()
+                logger.info(f"Page {page_no} converted to base64 image")
+
                 response = client.chat.completions.create(
                         model="meta-llama/llama-4-scout-17b-16e-instruct",
                         messages=[{
@@ -814,7 +831,7 @@ async def info(files:UploadFile=File(...)):
                 else:
                     content["dealer_gstin"] = ""
 
-                # Account number validation — strip non-digits, retry if invalid
+
                 account_number = content.get("account_number", "")
                 if account_number:
                     account_number = re.sub(r"[\s\-]", "", str(account_number))
@@ -837,7 +854,7 @@ async def info(files:UploadFile=File(...)):
                                 "role": "user",
                                 "content": [
                                     {"type": "text", "text": acc_prompt},
-                                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_images[0]}"}}
+                                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
                                 ]
                             }],
                             response_format={
@@ -856,4 +873,8 @@ async def info(files:UploadFile=File(...)):
                         fallback_acc = re.sub(r"[\s\-]", "", retry_content.get("account_number", ""))
                         content["account_number"] = fallback_acc if validate_account_number(fallback_acc) else ""
 
-            return content
+                for key, value in content.items():
+                    if value and not extracted_content.get(key):
+                        extracted_content[key] = value 
+
+            return extracted_content
