@@ -5,14 +5,15 @@ from groq import Groq
 import cv2, re
 import Levenshtein
 import numpy as np
-from pyzbar.pyzbar import decode
+from qreader import QReader
+from pyzbar.pyzbar import decode as pyzbar_decode
 from dotenv import load_dotenv
 import json, os, io, logging
 from logging.handlers import RotatingFileHandler
 import base64
 from pdf2image import convert_from_bytes
 from schemas import Response
-from validators import validate_dealercode, normalize_irncode, validate_hiibmispcode, normalize_gstin, validate_acknow, validate_irncode, validate_statecode, validate_hiibgstin, validate_dealergstin
+from validators import validate_dealercode, normalize_irncode, validate_hiibmispcode, normalize_gstin, validate_acknow, validate_irncode, validate_statecode, validate_hiibgstin, validate_dealergstin, validate_account_number
 
 load_dotenv()
 
@@ -61,235 +62,295 @@ api_key = os.environ.get("GROQ_API_KEY")
 
 client = Groq(api_key=api_key)
 
+def find_irn(text: str) -> str:
+        if not text:
+            return ""
+        m = re.search(r'[0-9a-fA-F]{64}', text)
+        if m:
+            return m.group().lower()
+        return ""
+
+def extract_irn_from_qr(pil_image) -> str:
+    cv_image = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
+    gray = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
+
+    try:
+        for obj in pyzbar_decode(gray):
+            raw = obj.data.decode("utf-8", errors="ignore")
+            irn = find_irn(raw)
+            if irn:
+                logger.info(f"IRN from pyzbar: {irn}")
+                return irn
+    except Exception as e:
+        logger.warning(f"pyzbar failed: {e}")
+    return ""
+
 @app.post("/information")
 async def info(files:UploadFile=File(...)):
             logger.info(f"Received file: {files.filename}")
             read = await files.read()
-            images = convert_from_bytes(read, dpi=400,poppler_path=r"C:\Program Files\poppler-26.02.0\Library\bin")
-            open_cv_image = np.array(images[0])
-            gray_image = cv2.cvtColor(open_cv_image, cv2.COLOR_RGB2GRAY)
-            decoded_objects = decode(gray_image)
-            qr_data = decoded_objects[0].data.decode('utf-8')
-            irn_match = re.search(r"[a-fA-F0-9]{64}", qr_data)
-            for page_no, image in enumerate(images,start=1):
-                print(f"Processing page {page_no}")
+            images = convert_from_bytes(read, dpi=400, poppler_path=r"C:\Program Files\poppler-26.02.0\Library\bin")
+            qr_irn = extract_irn_from_qr(images)
+            logger.info(f"QR IRN: {qr_irn or 'not found'}")
+            dict = {}
+            for page_no, image1 in enumerate(images):
                 buffer = io.BytesIO()
-                image.save(buffer, format="JPEG")
+                image1.save(buffer, format="JPEG")
                 buffer.seek(0)
                 base64_image = base64.b64encode(buffer.getvalue()).decode()
-                prompt = """
-                You are an expert PDF extractor.
+                logger.info(f"Page {page_no} converted to base64 image")
+                prompt ="""
+                You are an expert PDF extractor
+                    Action: Perform extraction from the uploaded files:
+                    * General full forms: HIIB: Hyundia India Insurance Groking
+                    * Dealer means the person through whom dealing is being done
+                    * GSTIN: means GST number 
+                    * Consigner means dealer
+                    * Buyer means who is buying
+                    * Aways cross check triple times between ocr like identify if it is 0 or O , 1 or I , 6 or G, 2 or Z like that.
+                    * Always compare the format with the index if it is different correct it right away.
+                    - irn:
+                    # Extract IRN value from the uploaded file
+                    - irn: 64-char hex string (0-9, a-f only). Concatenate fragments across line breaks. Verify length=64 before returning.
+                    - **Example**: b2d026b6df33f699fa486efd04fe322c6d-    -> concetenate both into a single line
+                                53dd6ffbe72dc6f709f0f031449c9f
+                    - ack_no:  ~15-digit acknowledgement number
+                    # Example : "123246152465342"
+                    - ack_date: Date should always be in this format : DD-MM-YYYY
+                    # If month is written as name like may jun jul then convert it into month number
+                    # Jan - 01, Feb - 02, Mar - 03, Apr - 04, may - 05, Jun - 06, Jul - 07, Aug - 08, Sep - 09, Oct - 10, Nov - 11, Dec - 12
+                    - invoice_number:
+                    - invoice_date: Date should always be in this format : DD-MM-YYYY
+                    # If month is written as name like may jun jul then convert it into month number
+                    # Jan - 01, Feb - 02, Mar - 03, Apr - 04, may - 05, Jun - 06, Jul - 07, Aug - 08, Sep - 09, Oct - 10, Nov - 11, Dec - 12
 
-                Action: Perform extraction from the uploaded files.
+                    - taxable_value:
+                    # Look for the taxable value in the invoice and print its value
+                    # taxable value means the price before gst price is added
+                    - cgst_amount: 
+                    - sgst_amount:
+                    - igst_amount:
+                    - total_invoice_value:
+                    # Amount after GST value added is the total invoice value.
+                    - dealer_code: look for compressed/concatenated values or mentioned as DEALER CODE
+                    - hiib_misp_code:
+                    - format HIIB-MHY-XXXX. If found as MHY-XXXX, prepend "HIIB-"
+                    ### Bank details
+                    Example: Company's Bank details
+                    Ac. Holders name: NATASHA AUTOMOBILES PRIVATE LIMITED
+                    Bank Name: Bank of Baroda-105
+                    Ac no: 30490500000105
+                    Branch and IFS/IFSC Code: IZZA ITANAGAR BAREILLY & BARB0IZZATN
+                    # - account_holders_name: Search for the section containing bank details and extract ac holders name if available
+                        - Here in example above, NATASHA AUTOMOBILES PRIVATE LIMITED is ac holders name
+                    # - bank_name:
+                        - Here, in example above, Bank of Baroda-105 is bank name.
+                    # - account_number:
+                        - Here in the example above, 30490500000105 is the account number
+                    # - branch:
+                        - Here in the example above, IZZA ITANAGAR BAREILLY is our branch name
+                    # - bank_ifsc_code:
+                        - Here in the example above, BARB0IZZATN is our bank ifsc code
+                    - micr_code:
+                    - hiib_gstin:
+                    # GSTIN in HIIB section
+                    # Look for the column where Hyundia India Insurance Brooking is mentioned.
+                    # Extract HIIB GSTIN value
+                    # Example: 06AAGCH0310P1ZP format is: XXAAAAAXXXXAXAA where A represents alphabets and X represents digits.
+                    - dealer_gstin:
+                    # GSTIN in dealer/consigner section (not Buyer/Bill To) Look for the section where Buyer Bill to is not written and extract GSTIN or UIN 
+                    # Look at the column which doesnt have written Buyer(bill to)
+                    # Extract Dealer's GSTIN value
+                    # Compare index and its value extracted if digit index has extracted alphabet value then correct it and if alphabet index has extracted digit value then correct it. In next line i have providedwith correction.
+                    # It is always in the format of XXAAAAAXXXXAXAA where A represents alphabets and X represents digits
+                    # So now after extracting check what was extracted and in which format. 
+                    # Digits will be in index: { 0, 1, 7, 8, 9, 10, 11, 13 }
+                    # Alphabets must be in index: { 2, 3, 4, 5, 6, 12, 14 }
+                    # If any digit index contains alphabets look here and correct it: {"0":"O", "1":"I","2":"Z","8":"B"}
+                    # If any alphabet index contains digits look here and correct it: {"O":"0", "I":"1", "Z":"2", "B":"8"}
+                    # Match the index with the extracted value
+                    # Example: 07ABCCS3697R1ZE
 
-                General Instructions:
+                    **hiib_pincode**: 6-digit pin from HIIB address
+                    - **Example: SHRI GANGA VEHICLES PVT LTD
+                                NEAR DTO OFFICE, JAIPUR ROAD, CHURU,
+                                Churu, Rajasthan, 331001
+                                GSTIN/UIN: 08AALCS3285P1ZH
+                                State Name : Rajasthan, Code : 08
+                                E-Mail : shrigangahyundaichuru@gmail.com
+                        - Look for the section where Buyer(Bill to) and Hyundia India Insurance Brooking is written and extract hiib_pincode here 331001 is hiib_pincode
+                    - **dealer_pincode**: 6-digit pin from dealer address
+                    - **Example: SHRI GANGA VEHICLES PVT LTD
+                                NEAR DTO OFFICE, JAIPUR ROAD, CHURU,
+                                Churu, Rajasthan, 331001
+                                GSTIN/UIN: 08AALCS3285P1ZH
+                                State Name : Rajasthan, Code : 08
+                                E-Mail : shrigangahyundaichuru@gmail.com
+                        - Look for the section where Buyer(Bill to) is not written and extract dealer_pincode here 331001 is dealer_pincode
+                    - **hiib_state_code**: numeric code from HIIB section (e.g. "06")
+                    - **Example: SHRI GANGA VEHICLES PVT LTD
+                                NEAR DTO OFFICE, JAIPUR ROAD, CHURU,
+                                Churu, Rajasthan, 331001
+                                GSTIN/UIN: 08AALCS3285P1ZH
+                                State Name : Rajasthan, Code : 08
+                                E-Mail : shrigangahyundaichuru@gmail.com
+                                - Look for the HIIB secton(Hyundia India Insurance Brooking) and extract state code. here in example above , state code is 08
+                    - **dealer_state_code**: numeric code from dealer section
+                    - **Example: SHRI GANGA VEHICLES PVT LTD
+                                NEAR DTO OFFICE, JAIPUR ROAD, CHURU,
+                                Churu, Rajasthan, 331001
+                                GSTIN/UIN: 08AALCS3285P1ZH
+                                State Name : Rajasthan, Code : 08
+                                E-Mail : shrigangahyundaichuru@gmail.com
+                                - Look for the state code inside the dealer section. here in example above , state code is 08
+                    - msme: if split across lines, concatenate
+                    - dealer_pan:
+                    - sac:
+                **Service:
+                Example:
+                Consignee (Ship to)
+                HYUNDAI INDIA INSURANCE BROKING PRIVATE LTD
+                16th Floor, Building No. 9A, DLF Cyber City, DLF
+                Phase-III, Gurugram - 122001
+                GSTIN/UIN : 06AAGCH0310P1ZP
+                PAN/IT No : AAGCH0310P
+                State Name : Haryana, Code : 06
+                    - consigner_details:
+                    # Look for the section where Consignee (Ship to) is written and identify its details and extract it
+                    # In the above example:  HYUNDAI INDIA INSURANCE BROKING PRIVATE LTD
+                                            16th Floor, Building No. 9A, DLF Cyber City, DLF
+                                            Phase-III, Gurugram - 122001 this is the consignee details
+                    - consigner_address:
+                    # Look for the section where Consignee (Ship to) is written and identify its address and extract it
+                    # In the example above, 16th Floor, Building No. 9A, DLF Cyber City, DLF
+                                            Phase-III, Gurugram - 122001 this is the consignee address
+                    - consigner_pincode:
+                    # Look for the section where Consignee (Ship to) is written and identify its 6 digit pincode inside address and extract it
+                    # In the example above, 122001 is the consignee pincode
+                **Buyer
+                - Example: 
+                Buyer (Bill to)
+                HYUNDAI INDIA INSURANCE BROKING PRIVATE LTD
+                16th Floor, Building No. 9A, DLF Cyber City, DLF
+                Phase-III, Gurugram - 122001
+                GSTIN/UIN : 06AAGCH0310P1ZP
+                PAN/IT No : AAGCH0310P
+                State Name : Haryana, Code : 06
+                    - buyers_name:
+                    # Always look for the column where Buyer (Bill to) Hyundia India Insurance Broking is written
+                    # Identify its name and extract its value.
+                    # In the example above, HYUNDAI INDIA INSURANCE BROKING PRIVATE LTD is the buyers name
+                    - buyers_address:
+                    # Always look for the column where Hyundia India Insurance Broking is written
+                    # Identify its address and extract its value.
+                    - In the example above, 16th Floor, Building No. 9A, DLF Cyber City, DLF
+                    Phase-III, Gurugram - 122001 is the buyers address
+                    - buyers_pincode:
+                    # Always look for the column where Hyundia India Insurance Broking is written
+                    # Identify its 6 digit pincode and extract its value.
+                    # In the example above, 122001 is the buyers pincode
+                    - consigner_place_of_supply:
+                    # In which place the dealer is supplying the goods from.
+                    # Example: Khanna Auto Sales Pvt. Ltd. (Keshavpuram)
+                                            J/Comm-10,Keshavpuram Yojna No.01,Kalyanpur
+                                            Kanpur-208019
+                        ~ Suppose this is the address then Kanpur is the consigner place of supply
+                    - consigner_place_of_buyer:
+                    # In which place he buyer is receiving its goods.
+                    # Example: Khanna Auto Sales Pvt. Ltd. (Keshavpuram)
+                                            J/Comm-10,Keshavpuram Yojna No.01,Kalyanpur
+                                            Kanpur-208019
+                        ~ Suppose this is the address then Kanpur is the buyer's place of supply
+                    - description:
+                    # must be inside the billing table 
+                    - oem:
+                    # can be also written OEM or OEM code or oem
+                    - quantity:
+                    # Look at the bill section and identify the sr no. column
+                                ~ After the sr no. column is identified look at how many sr no. are there.
+                                ~ and count the number of sr no. there
+                                Example: Sr no.
+                                        1
+                                        ~ Here Quantity is 1
+                                Example 2: Sr no.
+                                            2
+                                        ~ here quantity is 2
+                    - period_of_service:
+                    Rules:
+                    - Print every field names and if the information about the specific field is not available then return empty string.
+                    - If some information is not available in pdf then print empty string.
+                    - Dont add extra fields which are not getting extracted.
+                    - Dont even add that field name whose value is not present
+                    - If field values are not getting extracted dont even print its field name
+                    ## Output Format
 
-                - HIIB means Hyundai India Insurance Broking.
-                - Dealer means the person/company through whom dealing is being done.
-                - GSTIN means GST number.
-                - Consigner means Dealer.
-                - Buyer means Hyundai India Insurance Broking unless explicitly mentioned otherwise.
-                - Carefully read all pages, tables, headers, footers, GST sections, bank details sections and billing tables.
-                - Always cross check OCR errors such as O/0, I/1, G/6, Z/2, B/8 before finalizing values.
-                - Always compare extracted values with their expected format and correct OCR mistakes only when required.
-                - Return ONLY valid JSON.
-                - Do not return explanations.
-                - Do not return markdown.
-                - Do not return notes.
-                - If a field is not extracted or not present inside do not show it in output
-                - Always return all fields.
-                - Never print same field name twice.
-                - Never calculate any amount explicitly. Extract only values that are present.
+                    Return this exact JSON structure:
 
-                Fields:
-                - irn:
-                IRN Extraction Rules:
-                - Search the entire document for labels such as:
-                IRN
-                Invoice Reference Number
-                Invoice Ref No
-                - IRN is always a 64-character hexadecimal string.
-                - If IRN is split across multiple lines, concatenate all consecutive hexadecimal fragments until a 64-character value is formed.
-                - Ignore spaces, line breaks, hyphens (-), colons (:), and other separators while constructing the IRN.
-                - If multiple candidate IRNs are found, choose the one closest to the IRN label.
-                - Before returning, verify:
-                1. Length must be exactly 64 characters.
-                2. Only characters 0-9 and a-f are allowed.
-                3. Remove any non-hexadecimal characters.
-                4. Never misinterpret any character with different character
-                - If a valid 64-character IRN can be reconstructed from adjacent fragments, return it instead of an empty string.
-                - ack_no:
-                - Example: 123246152465342
-                - ack_date:
-                - Return format DD-MM-YYYY.
-                - Convert month names into month numbers.
-                - Jan=01 Feb=02 Mar=03 Apr=04 May=05 Jun=06 Jul=07 Aug=08 Sep=09 Oct=10 Nov=11 Dec=12
-                - invoice_number:
-                - invoice_date:
-                - Return format DD-MM-YYYY.
-                - Convert month names into month numbers.
-                - Jan=01 Feb=02 Mar=03 Apr=04 May=05 Jun=06 Jul=07 Aug=08 Sep=09 Oct=10 Nov=11 Dec=12
-                - taxable_value:
-                - Taxable value means amount before GST.
-                - cgst_amount:
-                - sgst_amount:
-                - igst_amount:
-                - total_invoice:
-                - Amount after adding all GST taxes.
-                - dealer_code: Look at the compressed value where words are sticked.
-                - hiib_misp_code:
-                - It can even be mentioned as MISP Code:
-                - It can be as MSY-0847 so add HIIB ahead
-                - Format: HIIB-MSY-XXXX
-                - Example: HIIB-MSY-9837
-                - account_holders_name:
-                - Inside company's bank detail section
-                - Extract only if present with bank details section.
-                - Account holders name must be present with other bank details.
-                - If ac. holders name not found then print empty string ""
-                - bank_name:
-                - account_number:
-                - branch:
-                - Example:
-                    G.T.ROAD PANIPAT & HDFC0000171
-                    Branch = G.T.ROAD PANIPAT
-                - bank_ifsc_code: IFS Code or IFSC Code
-                - Example:
-                    G.T.ROAD PANIPAT & HDFC0000171
-                    IFSC = HDFC0000171
-                - micr_code:
-                - hiib_gstin:
-                - Extract GSTIN belonging to Hyundai India Insurance Broking.
-                - GSTIN format must be XXAAAAAXXXXAXAA.
-                - Correct OCR mistakes only if required to match GSTIN format.
-                - dealer_gstin:
-                - Extract GSTIN belonging to Dealer.
-                - Usually present in column where Buyer(Bill To) is not written.
-                - GSTIN format must be XXAAAAAXXXXAXAA.
-                - Digit positions: 0,1,7,8,9,10,11,13
-                - Alphabet positions: 2,3,4,5,6,12,14
-                - Correct OCR mistakes if required:
-                    O→0
-                    I→1
-                    Z→2
-                    B→8
-                - hiib_pincode:
-                - Identify Hyundai India Insurance Broking address and extract 6 digit pincode.
-                - dealer_pincode:
-                - Identify Dealer address and extract 6 digit pincode.
-                - hiib_state_code:
-                - Look in Hyundai India Insurance Broking section.
-                - Example:
-                    State Name: Haryana
-                    Code: 06
-                    Output: 06
-                - dealer_state_code:
-                - Look in Dealer section.
-                - Example:
-                    State Name: Haryana
-                    Code: 06
-                    Output: 06
-                - msme:
-                - dealer_pan:
-                - sac:
-                - Extract SAC code from invoice.
-                - consigner_details:
-                - Look for Consignee To section.
-                - Extract complete details.
-                - consigner_address:
-                - Look for Consignee To section.
-                - Extract address only.
-                - consigner_pincode:
-                - Look for Consignee To section.
-                - Extract 6 digit pincode.
-                - buyers_name:
-                - Extract Hyundai India Insurance Broking name.
-                - buyers_address:
-                - Extract Hyundai India Insurance Broking address.
-                - buyers_pincode:
-                - Extract Hyundai India Insurance Broking pincode.
-                - consigner_place_of_supply:
-                - Extract city/place from Dealer/Consigner address.
-                - buyer_place_of_supply:
-                - Extract city/place from Buyer address.
-                - description_of_service:
-                - Must be extracted from billing/service table.
-                - oem:
-                - quantity:
-                - First look for Quantity column in billing table.
-                - If Quantity column exists, extract its value.
-                - If Quantity column does not exist, count total service/item rows from billing table.
-                - Look for the table and inside table look for sr no and look how many quantity it bought
-                - period_of_service:
-                - Extract service period if available.
-
-                Return output strictly in this JSON format:
-
-                {
-                "irn": "",
-                "ack_no": "",
-                "ack_date": "",
-                "invoice_no": "",
-                "invoice_date": "",
-                "taxable_value": "",
-                "cgst_amount": "",
-                "sgst_amount": "",
-                "igst_amount": "",
-                "total_invoice_value": "",
-                "dealer_code": "",
-                "hiib_misp_code": "",
-                "account_holders_name": "",
-                "bank_name": "",
-                "account_number": "",
-                "branch": "",
-                "bank_ifsc_code": "",
-                "micr_code": "",
-                "hiib_gstin": "",
-                "dealer_gstin": "",
-                "hiib_pincode": "",
-                "dealer_pincode": "",
-                "hiib_state_code": "",
-                "dealer_state_code": "",
-                "msme_code": "",
-                "dealer_pan": "",
-                "sac": "",
-                "consigner_details": "",
-                "consigner_address": "",
-                "consigner_pincode": "",
-                "buyers_name": "",
-                "buyers_address": "",
-                "buyers_pincode": "",
-                "consigner_place_of_supply": "",
-                "buyer_place_of_supply": "",
-                "description_of_service": "",
-                "oem": "",
-                "quantity": "",
-                "period_of_service": ""
-                }
-                    """
-                response = client.chat.completions.create(
-                    model="meta-llama/llama-4-scout-17b-16e-instruct",
-                    messages=[{
-                        "role":"user",
-                        "content":[{
-                            "type":"text",
-                            "text":prompt
-                        },
-                        {
-                            "type":"image_url",
-                            "image_url":{
-                                "url":f"data:image/jpeg;base64,{base64_image}",
-                            }
-                        }]
-                    }],
-                    response_format={
-                        "type":"json_schema",
-                        "json_schema":{
-                            "name":"extract_info",
-                            "schema": Response.model_json_schema()
-                        }
+                    {
+                    "irn": "",
+                    "ack_no": "",
+                    "ack_date": "",
+                    "invoice_number": "",
+                    "invoice_date": "",
+                    "taxable_value": "",
+                    "cgst_amount": "",
+                    "sgst_amount": "",
+                    "igst_amount": "",
+                    "total_invoice": "",
+                    "dealer_code": "",
+                    "hiib_misp_code": "",
+                    "account_holders_name": "",
+                    "bank_name": "",
+                    "account_number": "",
+                    "branch": "",
+                    "bank_ifsc_code": "",
+                    "micr_code": "",
+                    "hiib_gstin": "",
+                    "dealer_gstin": "",
+                    "hiib_pincode": "",
+                    "dealer_pincode": "",
+                    "hiib_state_code": "",
+                    "dealer_state_code": "",
+                    "msme": "",
+                    "dealer_pan": "",
+                    "sac": "",
+                    "consigner_details": "",
+                    "consigner_address": "",
+                    "consigner_pincode": "",
+                    "buyers_name": "",
+                    "buyers_address": "",
+                    "buyers_pincode": "",
+                    "consigner_place_of_supply": "",
+                    "buyer_place_of_supply": "",
+                    "description_of_service": "",
+                    "oem": "",
+                    "quantity": "",
+                    "period_of_service": ""
                     }
-                )
+                """
+                response = client.chat.completions.create(
+                        model="meta-llama/llama-4-scout-17b-16e-instruct",
+                        messages=[{
+                            "role":"user",
+                            "content":[{
+                                "type":"text",
+                                "text":prompt
+                            },
+                            {
+                                "type":"image_url",
+                                "image_url":{
+                                    "url":f"data:image/jpeg;base64,{base64_image}",
+                                }
+                            }]
+                        }],
+                        response_format={
+                            "type":"json_schema",
+                            "json_schema":{
+                                "name":"extract_info",
+                                "schema": Response.model_json_schema()
+                            }
+                        }
+                    )
                 content = json.loads(response.choices[0].message.content or "{}")
                 logger.info(f"LLM extraction complete for file: {files.filename}")
                 irn = content.get("irn")
@@ -301,68 +362,83 @@ async def info(files:UploadFile=File(...)):
                 hiibgst = content.get("hiib_gstin")
                 dealergstin = content.get("dealer_gstin")
 
-
                 if irn:
                     irn = normalize_irncode(irn)
                     if not validate_irncode(irn):
-                        logger.warning("Validation failed for irn, retrying!")
+                        logger.warning("Validation failed for IRN, retrying!")
                         irn_prompt = """
                         Extract only IRN value from the file
                         Rules:
                         - return json
-                        - remove whitespaces, hypens 
+                        - remove whitespaces, hyphens
                         - Length of IRN must be 64
                         - Do not include any extra character
-                        - If irn cannot be identified return:
-                        - if IRN value is divided into 2 lines like this: IRN :- fcae7936e5360de23b3d57c623b3743301bc0b786c5- then join both the values from both lines and remove -
-                                                                                 f43ed5fb9310ba9b972a5
+                        - if IRN value is divided into 2 lines join both and remove -
                         - Never include (-) inside the extracted string
                         {"irn":""}
                         """
                         retry_response = client.chat.completions.create(
                             model="meta-llama/llama-4-scout-17b-16e-instruct",
                             messages=[{
-                                "role":"user",
-                                "content":[{
-                                    "type":"text",
-                                    "text":irn_prompt
-                                },
-                                {
-                                    "type":"image_url",
-                                    "image_url":{
-                                        "url":f"data:image/jpeg;base64,{base64_image}",
+                                "role": "user",
+                                "content": [
+                                    {
+                                        "type": "text",
+                                        "text": irn_prompt
+                                    },
+                                    {
+                                        "type": "image_url",
+                                        "image_url": {
+                                            "url": f"data:image/jpeg;base64,{base64_image}"
+                                        }
                                     }
-                                }]
+                                ]
                             }],
                             response_format={
-                                "type":"json_schema",
-                                "json_schema":{
-                                    "name":"extract_irn",
-                                    "schema":{
-                                        "type":"object",
-                                        "properties":{
-                                            "irn":{"type":"string"}
+                                "type": "json_schema",
+                                "json_schema": {
+                                    "name": "extract_irn",
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "irn": {"type": "string"}
                                         },
-                                        "required":["irn"]
+                                        "required": ["irn"]
                                     }
                                 }
                             }
                         )
-                        retry_content = json.loads(retry_response.choices[0].message.content or "{}")
-                        fallback_irn = retry_content.get("irn", "")
-                        fallback_irn = normalize_irncode(fallback_irn)
-                        if fallback_irn == irn_match:
-                            content["irn"] == fallback_irn
+
+                        retry_content = json.loads(
+                            retry_response.choices[0].message.content or "{}"
+                        )
+                        irn = normalize_irncode(retry_content.get("irn", ""))
+
+                    llm_valid = validate_irncode(irn)
+                    qr_valid = validate_irncode(qr_irn) if qr_irn else False
+
+                    if qr_valid:
+                        if llm_valid:
+                            distance = Levenshtein.distance(irn, qr_irn)
+                            logger.info(f"Levenshtein distance LLM vs QR IRN: {distance}")
+
+                            if distance == 0:
+                                logger.info("IRN: LLM and QR match")
+                                content["irn"] = irn
+                            else:
+                                logger.warning(
+                                    f"IRN mismatch (distance={distance}), using QR value"
+                                )
+                                content["irn"] = qr_irn
                         else:
-                            content["irn"] == irn_match
-                        if validate_irncode(fallback_irn):
-                            content["irn"] = fallback_irn
-                        else:
-                            content["irn"] = ""
+                            logger.warning("LLM IRN invalid, using QR IRN")
+                            content["irn"] = qr_irn
                     else:
-                        content["irn"] = irn
+                        content["irn"] = irn if llm_valid else ""
+
                 else:
-                    content["irn"] = ""
+                    content["irn"] = qr_irn if qr_irn and validate_irncode(qr_irn) else ""
+               
                         
                 if ackno:
                     if not validate_acknow(ackno):
@@ -737,4 +813,47 @@ async def info(files:UploadFile=File(...)):
                             content["dealer_gstin"] = ""
                 else:
                     content["dealer_gstin"] = ""
-                return content  
+
+                # Account number validation — strip non-digits, retry if invalid
+                account_number = content.get("account_number", "")
+                if account_number:
+                    account_number = re.sub(r"[\s\-]", "", str(account_number))
+                    content["account_number"] = account_number
+                    if not validate_account_number(account_number):
+                        logger.warning(f"Account number invalid ({account_number}), retrying!")
+                        acc_prompt = """
+                        Extract only the bank account number from the file.
+                        Rules:
+                        - return json
+                        - Remove all spaces, hyphens
+                        - Account number contains digits only
+                        - Length is between 9 and 18 digits
+                        - Do not include IFSC, MICR or any other code
+                        - If not found return: {"account_number": ""}
+                        """
+                        retry_response = client.chat.completions.create(
+                            model="meta-llama/llama-4-scout-17b-16e-instruct",
+                            messages=[{
+                                "role": "user",
+                                "content": [
+                                    {"type": "text", "text": acc_prompt},
+                                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_images[0]}"}}
+                                ]
+                            }],
+                            response_format={
+                                "type": "json_schema",
+                                "json_schema": {
+                                    "name": "extract_account_number",
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {"account_number": {"type": "string"}},
+                                        "required": ["account_number"]
+                                    }
+                                }
+                            }
+                        )
+                        retry_content = json.loads(retry_response.choices[0].message.content or "{}")
+                        fallback_acc = re.sub(r"[\s\-]", "", retry_content.get("account_number", ""))
+                        content["account_number"] = fallback_acc if validate_account_number(fallback_acc) else ""
+
+            return content
