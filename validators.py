@@ -23,8 +23,9 @@ def validate_dealercode(code: str) -> bool:
 
 
 def validate_hiibmispcode(hiib: str) -> bool:
-    hiib = hiib.replace(" ","")
-    return bool(re.fullmatch(r"HIIB[-\s]MHY-[0-9]{4}", hiib))
+    hiib = hiib.strip().upper()
+    hiib = re.sub(r"[\s\-]+", "-", hiib)
+    return bool(re.fullmatch(r"HIIB-MHY-[0-9]{4}", hiib))
 
 
 def validate_statecode(code: str) -> bool:
@@ -74,3 +75,9 @@ def validate_hiibgstin(gstin: str) -> bool:
 def validate_dealergstin(gstin: str) -> bool:
     gstin = normalize_gstin(gstin)
     return bool(re.fullmatch(r"[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9][A-Z][A-Z0-9]", gstin))
+
+
+def validate_account_number(acc: str) -> bool:
+    """Account numbers are 9-18 digits, strip spaces/hyphens before checking."""
+    acc = re.sub(r"[\s\-]", "", acc)
+    return bool(re.fullmatch(r"[0-9]{9,18}", acc))
