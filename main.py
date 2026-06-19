@@ -876,5 +876,7 @@ async def info(files:UploadFile=File(...)):
                 for key, value in content.items():
                     if value and not extracted_content.get(key):
                         extracted_content[key] = value 
+                        logger.info(f"If pages and if data appending to extracted_content")
+                    logger.info(f"No data to append!")
 
             return extracted_content
