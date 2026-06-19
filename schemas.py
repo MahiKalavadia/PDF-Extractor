@@ -36,8 +36,8 @@ class Response(BaseModel):
     buyers_address: str = ""      
     buyers_pincode: str = ""      
     consigner_place_of_supply: str = ""
-    consigner_place_of_buyer: str = ""
-    description: str = ""
+    buyer_place_of_supply: str = ""       
+    description_of_service: str = ""     
     oem: str = ""
     quantity: int = 0
     period_of_service: str = ""
