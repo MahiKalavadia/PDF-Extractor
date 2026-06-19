@@ -1,6 +1,7 @@
 import re
 
 def normalize_irncode(irn: str) -> str:
+    """Normalizing extracted irn code by removing hypens or spaces to validate"""
     if not irn:
         return ""
     irn = irn.replace("-", "").replace(" ", "").replace("\n", "").strip().lower()
@@ -9,26 +10,31 @@ def normalize_irncode(irn: str) -> str:
 
 
 def validate_irncode(irn: str) -> bool:
+    """Validating irn code after it is normalised"""
     if not irn:
         return False
     return len(irn) == 64
 
 
 def validate_acknow(ack: str) -> bool:
+    """Validating acknowledgment number to match"""
     return bool(re.fullmatch(r"[0-9]{15}", ack))
 
 
 def validate_dealercode(code: str) -> bool:
+    """Validating dealercode to be of length 5"""
     return bool(re.fullmatch(r"[A-Z][0-9]{4}", code))
 
 
 def validate_hiibmispcode(hiib: str) -> bool:
+    """validating hiib misp code from extracted value to compare that if it is of same length"""
     hiib = hiib.strip().upper()
     hiib = re.sub(r"[\s\-]+", "-", hiib)
     return bool(re.fullmatch(r"HIIB-MHY-[0-9]{4}", hiib))
 
 
 def validate_statecode(code: str) -> bool:
+    """Validating statecode to be of length 2"""
     return bool(re.fullmatch(r"[0-9]{2}", str(code)))
 
 
@@ -68,16 +74,18 @@ def normalize_gstin(gstin: str) -> str:
 
 
 def validate_hiibgstin(gstin: str) -> bool:
+    """Validating hiib gstin to be of exact length 15"""
     gstin = normalize_gstin(gstin)
     return bool(re.fullmatch(r"[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9][A-Z]{2}", gstin))
 
 
 def validate_dealergstin(gstin: str) -> bool:
+    """Validating dealer gstin of length 15"""
     gstin = normalize_gstin(gstin)
     return bool(re.fullmatch(r"[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9][A-Z][A-Z0-9]", gstin))
 
 
 def validate_account_number(acc: str) -> bool:
-    """Account numbers are 9-18 digits, strip spaces/hyphens before checking."""
+    """validating account number to be in length between 9-18 and removing spaces or hypens to check"""
     acc = re.sub(r"[\s\-]", "", acc)
     return bool(re.fullmatch(r"[0-9]{9,18}", acc))
