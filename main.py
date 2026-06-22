@@ -88,10 +88,99 @@ def find_irn(text: str) -> str:
                 inner = json.loads(data_str)
             else:
                 inner = data_str
+            print(data_str)
+            
             irn = inner.get("Irn") or inner.get("irn", "")
             if irn and len(irn) == 64:
                 logger.info(f"IRN found in nested data: {irn}")
                 return irn.lower()
+    except (jwt.exceptions.InvalidTokenError, jwt.exceptions.DecodeError) as e:
+        logger.warning(f"JWT decode error: {e}")
+    except Exception as e:
+        logger.warning(f"Error parsing decoded JWT: {e}")
+
+def find_invno(text: str) -> str:
+    """Extract InvoiceNumber from QR text — handles NIC e-Invoice JWT where InvoiceNumber is inside nested data field."""
+    if not text:
+        return ""
+
+    try:
+        outer = jwt.decode(text.strip(), options={"verify_signature":False})
+        logger.info(f"JWT outer keys: {list(outer.keys())}")
+
+        invoice = outer.get("DocNo") or outer.get("docno")
+        if invoice:
+            return invoice.lower()
+
+        data_str = outer.get("data", "")
+        if data_str:
+            if isinstance(data_str, str):
+                inner = json.loads(data_str)
+            else:
+                inner = data_str
+            
+            invoice = inner.get("DocNo") or inner.get("docno")
+            if invoice :
+                logger.info(f"Invoice found in nested data: {invoice}")
+                return invoice.lower()
+    except (jwt.exceptions.InvalidTokenError, jwt.exceptions.DecodeError) as e:
+        logger.warning(f"JWT decode error: {e}")
+    except Exception as e:
+        logger.warning(f"Error parsing decoded JWT: {e}")
+
+def find_dealergst(text: str) -> str:
+    """Extract Dealergstin from QR text — handles NIC e-Invoice JWT where Dealergstin is inside nested data field."""
+    if not text:
+        return ""
+
+    try:
+        outer = jwt.decode(text.strip(), options={"verify_signature":False})
+        logger.info(f"JWT outer keys: {list(outer.keys())}")
+
+        dealergst = outer.get("SellerGstin") or outer.get("sellergstin")
+        if dealergst:
+            return dealergst.lower()
+
+        data_str = outer.get("data", "")
+        if data_str:
+            if isinstance(data_str, str):
+                inner = json.loads(data_str)
+            else:
+                inner = data_str
+            
+            dealergst = inner.get("SellerGstin") or inner.get("sellergstin")
+            if dealergst :
+                logger.info(f"Seller Gstin found in nested data: {dealergst}")
+                return dealergst.lower()
+    except (jwt.exceptions.InvalidTokenError, jwt.exceptions.DecodeError) as e:
+        logger.warning(f"JWT decode error: {e}")
+    except Exception as e:
+        logger.warning(f"Error parsing decoded JWT: {e}")
+
+def find_hiibgst(text: str) -> str:
+    """Extract Dealergstin from QR text — handles NIC e-Invoice JWT where Dealergstin is inside nested data field."""
+    if not text:
+        return ""
+
+    try:
+        outer = jwt.decode(text.strip(), options={"verify_signature":False})
+        logger.info(f"JWT outer keys: {list(outer.keys())}")
+
+        hiibgst = outer.get("BuyerGstin") or outer.get("buyergstin")
+        if hiibgst:
+            return hiibgst.lower()
+
+        data_str = outer.get("data", "")
+        if data_str:
+            if isinstance(data_str, str):
+                inner = json.loads(data_str)
+            else:
+                inner = data_str
+            
+            hiibgst = inner.get("BuyerGstin") or inner.get("buyergstin")
+            if hiibgst :
+                logger.info(f"Buyer Gstin found in nested data: {hiibgst}")
+                return hiibgst.lower()
     except (jwt.exceptions.InvalidTokenError, jwt.exceptions.DecodeError) as e:
         logger.warning(f"JWT decode error: {e}")
     except Exception as e:
@@ -107,6 +196,39 @@ def verify_qr_irn(qr_irn: str) -> bool:
         logger.info(f"QR IRN verified: {qr_irn}")
     else:
         logger.warning(f"QR IRN invalid (len={len(qr_irn)}): {qr_irn}")
+    return is_valid
+
+def verify_qr_invoice(qr_inv: str) -> bool:
+    """Verify the IRN extracted from QR is a valid 64-char hex string."""
+    if not qr_inv:
+        logger.warning("QR Invoice verification failed: empty value")
+        return False
+    else:
+        logger.info(f"QR Invoice verified: {qr_inv}")
+        return qr_inv
+
+def verify_qr_dealergst(qr_dealergst: str) -> bool:
+    """Verify the IRN extracted from QR is a valid 64-char hex string."""
+    if not qr_dealergst:
+        logger.warning("QR IRN verification failed: empty value")
+        return False
+    is_valid = bool(re.fullmatch(r"[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9][A-Z][A-Z0-9]", qr_dealergst))
+    if is_valid:
+        logger.info(f"QR SellerGstin verified: {qr_dealergst}")
+    else:
+        logger.warning(f"QR SellerGstin invalid (len={len(qr_dealergst)}): {qr_dealergst}")
+    return is_valid
+
+def verify_qr_hiibgst(qr_hiibgst: str) -> bool:
+    """Verify the IRN extracted from QR is a valid 64-char hex string."""
+    if not qr_hiibgst:
+        logger.warning("QR IRN verification failed: empty value")
+        return False
+    is_valid = bool(re.fullmatch(r"[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9][A-Z]{2}", qr_hiibgst))
+    if is_valid:
+        logger.info(f"QR HiibGstin verified: {qr_hiibgst}")
+    else:
+        logger.warning(f"QR HiibGstin invalid (len={len(qr_hiibgst)}): {qr_hiibgst}")
     return is_valid
 
 def extract_irn_from_qr(qr_image) -> str:
@@ -126,7 +248,56 @@ def extract_irn_from_qr(qr_image) -> str:
     except Exception as e:
         logger.warning(f"QReader failed: {e}")
 
+def extract_invoice_from_qr(qr_image) -> str:
+    """Extracting invoice after scanning qr code from image"""
 
+    try:
+        qreader = QReader()
+        image = np.array(qr_image)
+        decoded_texts = qreader.detect_and_decode(image=image)
+        logger.info(f"QReader detected {len(decoded_texts)} objects")
+        for text in decoded_texts:
+            if text:
+                invoice = find_invno(text)
+                if invoice:
+                    logger.info(f"Invoice from QReader: {invoice}")
+                    return invoice
+    except Exception as e:
+        logger.warning(f"QReader failed: {e}")
+
+def extract_dealergstin_from_qr(qr_image) -> str:
+    """Extracting Seller Gstin after scanning qr code from image"""
+
+    try:
+        qreader = QReader()
+        image = np.array(qr_image)
+        decoded_texts = qreader.detect_and_decode(image=image)
+        logger.info(f"QReader detected {len(decoded_texts)} objects")
+        for text in decoded_texts:
+            if text:
+                dealergst = find_dealergst(text)
+                if dealergst:
+                    logger.info(f"Dealer GSTIN from QReader: {dealergst}")
+                    return dealergst
+    except Exception as e:
+        logger.warning(f"QReader failed: {e}")
+
+def extract_hiibgstin_from_qr(qr_image) -> str:
+    """Extracting Hiib gstin after scanning qr code from image"""
+
+    try:
+        qreader = QReader()
+        image = np.array(qr_image)
+        decoded_texts = qreader.detect_and_decode(image=image)
+        logger.info(f"QReader detected {len(decoded_texts)} objects")
+        for text in decoded_texts:
+            if text:
+                hiibgst = find_hiibgst(text)
+                if hiibgst:
+                    logger.info(f"Buyer GSTIN from QReader: {hiibgst}")
+                    return hiibgst
+    except Exception as e:
+        logger.warning(f"QReader failed: {e}")
 
 prompt ="""
                 You are an expert assistant who extracts pdf data very gracefully!
@@ -142,6 +313,9 @@ prompt ="""
                 - Date should be in format: DD-MM-YYYY(if month name found during extraction replace month name to its month number)
                 - Check for ocr errors during extraction(difference between 0 and O, difference between 1 or I, difference between 2 or Z etc.)
                 - Do not calculate any amount yourself
+                - Never mix bank ifsc code and branch name -> if mentioned together separate them
+                  -> Example: Branch and IFS code: IZZA ITANAGAR BAREILLY & BARB0IZZATN
+                     Separate them : Branch -> IZZA ITANAGAR BAREILLY, IFS Code: BARB0IZZATN
                 **Action: Perform extraction:**
                 # Invoice related details:
                   1. irn
@@ -161,18 +335,14 @@ prompt ="""
                   # Amount related details:
                   1. taxable_value:
                   - Amount before GST got added
-                  2. cgst_amount: If cgst_amount present then extract value and if not present then do not
-                     - if not visible print 0
-                  3. sgst_amount: If sgst_amount present then extract value
-                     - if not visible print 0
-                  4. igst_amount: If igst_amount present then extract value
-                     - if not visible print 0
+                  2. cgst_amount: 
+                  3. sgst_amount: 
+                  4. igst_amount: 
                   5. total_invoice_value: 
                   - Amount total after adding GST values
                   # Dealer and Buyer code:
                   1. dealer_code:
-                  - Mentioned as Dealer Code or DEALER CODE
-                  - look for compressed/concatenated values if not found
+                  - look for compressed/concatenated values or mentioned as Dealer Code or DEALER CODE
                   - It is always present so look clearly, if possible zoom and extract its value
                   2.hiib_misp_code:
                   - format HIIB-MHY-XXXX. If found as MHY-XXXX, prepend "HIIB-"
@@ -184,6 +354,7 @@ prompt ="""
                   Ac no: 30490500000105
                   Branch and IFS/IFSC Code: IZZA ITANAGAR BAREILLY & BARB0IZZATN
                   - Never mix branch and ifsc code together
+                  - Always separate them and print
                     1. account_holders_name: Search for the section containing bank details and extract ac holders name if available
                         - Here in example above, NATASHA AUTOMOBILES PRIVATE LIMITED is ac holders name
                     2. bank_name:
@@ -196,13 +367,12 @@ prompt ="""
                         - Here in the example above, BARB0IZZATN is our bank ifsc code
                     # Other details:
                     1. micr_code:
-                    2. msme: also written as MSEME Code of MSME 
-                    - can be seprated along 2 lines -> concatenate it
+                    2. msme: Extract MSME Code/MSEME Code
                     3. sac:
                     4. description: Inside the billing table
-                    5. oem: can be also written OEM or OEM code or oem
-                    6. quantity:
-                    7. period_of_service:
+                    5. oem: Extract oem value
+                    6. quantity: How many quantity did they buy -> count its value
+                    7. period_of_service: can be separated across several lines->concatenate them
                     # GSTIN/UIN details:
                     1. hiib_gstin:
                     - GSTIN/UIN value for Hyundia India Insurance Brooking
@@ -233,6 +403,8 @@ prompt ="""
                                 E-Mail : shrigangahyundaichuru@gmail.com
                         - Look for the section where Buyer(Bill to) and Hyundia India Insurance Brooking is written and extract hiib_pincode here 331001 is hiib_pincode
                     2. dealer_pincode : 6-digit pin from dealer address
+                    - Look for the column where Buyer(Bill To) is not written and extract pincode 
+                      Pincode: 658383
                     - Example: SHRI GANGA VEHICLES PVT LTD
                                 NEAR DTO OFFICE, JAIPUR ROAD, CHURU,
                                 Churu, Rajasthan, 331001
@@ -240,6 +412,8 @@ prompt ="""
                                 State Name : Rajasthan, Code : 08
                                 E-Mail : shrigangahyundaichuru@gmail.com
                         - Look for the section where Buyer(Bill to) is not written and extract dealer_pincode here 331001 is dealer_pincode
+                        - Or can be mentioned separately as Pincode
+                          Example: Pincode: 453712
                     3. hiib_state_code : numeric code from HIIB section (e.g. "06")
                     - Example: SHRI GANGA VEHICLES PVT LTD
                                 NEAR DTO OFFICE, JAIPUR ROAD, CHURU,
@@ -282,11 +456,12 @@ prompt ="""
                     - Look for the section where Consignee (Ship to) is written and identify its 6 digit pincode inside address and extract it
                     - In the example above, 122001 is the consignee pincode
                     4. consigner_place_of_supply:
-                    - In which place the dealer is supplying the goods from.
-                    - Example: Khanna Auto Sales Pvt. Ltd. (Keshavpuram)
-                                            J/Comm-10,Keshavpuram Yojna No.01,Kalyanpur
-                                            Kanpur-208019
-                        ~ Suppose this is the address then Kanpur is the consigner place of supply
+                    - Supply -> person who is selling the goods
+                    - Look for the column/section where Consignee(Ship To) is mentioned.
+                    - Identify its address first
+                    - Example: This is his address: 16th Floor, Building No. 9A, DLF Cyber City, DLF
+                       Phase-III, Gurugram - 122001
+                       - Then gurugram is the consigner place of buyer
                     # Buyer
                     - Example: 
                     Buyer (Bill to)
@@ -311,11 +486,12 @@ prompt ="""
                     - Identify its 6 digit pincode and extract its value.
                     - In the example above, 122001 is the buyers pincode
                     4. consigner_place_of_buyer:
-                    - In which place he buyer is receiving its goods.
-                    - Example: Khanna Auto Sales Pvt. Ltd. (Keshavpuram)
-                                            J/Comm-10,Keshavpuram Yojna No.01,Kalyanpur
-                                            Kanpur-208019
-                        ~ Suppose this is the address then Kanpur is the buyer's place of supply
+                    - Buyer -> person who is buying the goods
+                    - Look for the column/section where Buyer(Bill To) is mentioned.
+                    - Identify its address first
+                    - Example: This is his address: 16th Floor, Building No. 9A, DLF Cyber City, DLF
+                       Phase-III, Gurugram - 122001
+                       - Then gurugram is the consigner place of buyer
                     ## Output Format
                     Return this exact JSON structure:
 
@@ -354,26 +530,13 @@ prompt ="""
                     "buyers_address": "",
                     "buyers_pincode": "",
                     "consigner_place_of_supply": "",
-                    "buyer_place_of_supply": "",
+                    "consigner_place_of_buyer": "",
                     "description_of_service": "",
                     "oem": "",
                     "quantity": "",
                     "period_of_service": ""
                     }
                 """
-
-@app.post("/scan-qr-irn")
-async def scan_qr_irn(file: UploadFile = File(...)):
-    """Upload a PDF and get IRN extracted from QR code via JWT decode."""
-    read = await file.read()
-    images = convert_from_bytes(read, dpi=400, poppler_path=POPPLER_PATH)
-    for i, page in enumerate(images, start=1):
-        logger.info(f"Scanning QR on page {i}")
-        irn = extract_irn_from_qr(page)
-        if verify_qr_irn(irn):
-            return {"irn": irn, "source": "qr", "page": i}
-    return {"irn": "", "source": "qr", "page": None}
-
 
 @app.post("/information")
 async def info(files:UploadFile=File(...)):
@@ -388,7 +551,27 @@ async def info(files:UploadFile=File(...)):
         if qr_irn:
             logger.info(f"QR IRN found : {qr_irn}")
             break
-    logger.info(f"QR IRN: {qr_irn or 'not found'}")
+
+    qr_invoice = ""
+    for img1 in images:
+        qr_invoice = extract_invoice_from_qr(img1)
+        if qr_invoice:
+            logger.info(f"QR Invoice found: {qr_invoice}")
+            break
+    
+    dealer_gstin = ""
+    for img2 in images:
+        qr_dealergst = extract_dealergstin_from_qr(img2)
+        if qr_dealergst:
+            logger.info(f"QR Invoice found: {qr_dealergst}")
+            break
+
+    hiib_gstin = ""
+    for img3 in images:
+        qr_hiibgst = extract_invoice_from_qr(img3)
+        if qr_hiibgst:
+            logger.info(f"QR Invoice found: {qr_hiibgst}")
+            break
 
     extracted_content = Response().model_dump()
     for page_no, image1 in enumerate(images, start=1):
@@ -424,6 +607,7 @@ async def info(files:UploadFile=File(...)):
         content = json.loads(response.choices[0].message.content or "{}")
         logger.info(f"LLM extraction complete for file: {files.filename}")
         irn = content.get("irn")
+        content["invoice_number"] = qr_invoice.upper()
         ackno = content.get("ack_no")
         dealer = content.get("dealer_code")
         hiibmisp = content.get("hiib_misp_code")
@@ -431,7 +615,6 @@ async def info(files:UploadFile=File(...)):
         dealerstate = content.get("dealer_state_code")
         hiibgst = content.get("hiib_gstin")
         dealergstin = content.get("dealer_gstin")
-
         if irn:
             irn = normalize_irncode(irn)
             if not validate_irncode(irn):
@@ -813,15 +996,33 @@ async def info(files:UploadFile=File(...)):
                     }
                 )
                 retry_content = json.loads(retry_response.choices[0].message.content)
-                fallback_hiib_gstin = retry_content.get("hiib_gstin","")
-                fallback_hiib_gstin = normalize_gstin(fallback_hiib_gstin)
-                content["hiib_gstin"] = fallback_hiib_gstin
-                if validate_hiibgstin(fallback_hiib_gstin):
-                    content["hiib_gstin"] = fallback_hiib_gstin
+                hiibgst= normalize_gstin(retry_content.get("hiib_gstin", ""))
+
+
+            llm_valid = validate_hiibgstin(hiibgst)
+            qr_valid = validate_hiibgstin(qr_hiibgst) if qr_hiibgst else False
+
+            if qr_valid:
+                if llm_valid:
+                    distance = Levenshtein.distance(hiibgst, qr_hiibgst)
+                    logger.info(f"Levenshtein distance LLM vs QR dealergst: {distance}")
+
+                    if distance == 0:
+                        logger.info("IRN: LLM and QR match")
+                        content["hiib_gstin"] = hiibgst
+                    else:
+                        logger.warning(
+                            f"GST mismatch (distance={distance}), using QR value"
+                        )
+                        content["hiib_gstin"] = qr_hiibgst
                 else:
-                    content["hiib_gstin"] = ""
+                    logger.warning("LLM hiibgst invalid, using QR hiibgst")
+                    content["hiib_gstin"] = qr_hiibgst
+            else:
+                content["hiib_gstin"] = hiibgst if llm_valid else ""
+
         else:
-            content["hiib_gstin"] = ""
+            content["hiib_gstin"] = qr_hiibgst if qr_hiibgst and validate_hiibgstin(qr_hiibgst) else ""
 
         if dealergstin:
             dealergstin = normalize_gstin(dealergstin)
@@ -874,16 +1075,33 @@ async def info(files:UploadFile=File(...)):
                     }
                 )
                 retry_content = json.loads(retry_response.choices[0].message.content)
-                fallback_dealer_gstin = retry_content.get("dealer_gstin","")
-                fallback_dealer_gstin = normalize_gstin(fallback_dealer_gstin)
-                content["dealer_gstin"] = fallback_dealer_gstin
-                if validate_dealergstin(fallback_dealer_gstin):
-                    content["dealer_gstin"] = fallback_dealer_gstin
-                else:
-                    content["dealer_gstin"] = ""
-        else:
-            content["dealer_gstin"] = ""
+                dealer_gstin= normalize_gstin(retry_content.get("dealer_gstin", ""))
 
+
+            llm_valid = validate_dealergstin(dealer_gstin)
+            qr_valid = validate_dealergstin(qr_dealergst) if qr_dealergst else False
+
+            if qr_valid:
+                if llm_valid:
+                    distance = Levenshtein.distance(dealer_gstin, qr_dealergst)
+                    logger.info(f"Levenshtein distance LLM vs QR dealergst: {distance}")
+
+                    if distance == 0:
+                        logger.info("IRN: LLM and QR match")
+                        content["dealer_gstin"] = dealer_gstin
+                    else:
+                        logger.warning(
+                            f"GST mismatch (distance={distance}), using QR value"
+                        )
+                        content["dealer_gstin"] = qr_dealergst
+                else:
+                    logger.warning("LLM dealergst invalid, using QR dealergst")
+                    content["dealer_gstin"] = qr_dealergst
+            else:
+                content["dealer_gstin"] = dealer_gstin if llm_valid else ""
+
+        else:
+            content["dealer_gstin"] = qr_dealergst if qr_dealergst and validate_dealergstin(qr_dealergst) else ""
 
         account_number = content.get("account_number", "")
         if account_number:
