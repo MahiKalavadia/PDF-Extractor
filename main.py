@@ -75,7 +75,7 @@ def find_irn(text: str) -> str:
         return ""
 
     try:
-        outer = jwt.decode(text.strip(), options={"verify_signature": False})
+        outer = jwt.decode(text.strip(), options={"verify_signature":False})
         logger.info(f"JWT outer keys: {list(outer.keys())}")
 
         irn = outer.get("Irn") or outer.get("irn", "")
@@ -97,13 +97,6 @@ def find_irn(text: str) -> str:
     except Exception as e:
         logger.warning(f"Error parsing decoded JWT: {e}")
 
-    m = re.search(r'[0-9a-fA-F]{64}', text)
-    if m:
-        return m.group().lower()
-    return ""
-
-
-
 def verify_qr_irn(qr_irn: str) -> bool:
     """Verify the IRN extracted from QR is a valid 64-char hex string."""
     if not qr_irn:
@@ -116,20 +109,13 @@ def verify_qr_irn(qr_irn: str) -> bool:
         logger.warning(f"QR IRN invalid (len={len(qr_irn)}): {qr_irn}")
     return is_valid
 
-_qreader = None
-def get_qreader():
-    global _qreader
-    if _qreader is None:
-        _qreader = QReader()
-    return _qreader
-
-def extract_irn_from_qr(pil_image) -> str:
+def extract_irn_from_qr(qr_image) -> str:
     """Extracting irn after scanning qr code from image"""
 
     try:
-        qreader = get_qreader()
-        rgb_image = np.array(pil_image)
-        decoded_texts = qreader.detect_and_decode(image=rgb_image)
+        qreader = QReader()
+        image = np.array(qr_image)
+        decoded_texts = qreader.detect_and_decode(image=image)
         logger.info(f"QReader detected {len(decoded_texts)} objects")
         for text in decoded_texts:
             if text:
@@ -140,7 +126,6 @@ def extract_irn_from_qr(pil_image) -> str:
     except Exception as e:
         logger.warning(f"QReader failed: {e}")
 
-    return ""
 
 
 prompt ="""
