@@ -753,7 +753,7 @@ async def info(files:UploadFile=File(...)):
                     distance = Levenshtein.distance(irn, qr_irn)
                     logger.info(f"Levenshtein distance LLM vs QR IRN: {distance}")
 
-                    if distance == 0:
+                    if distance <= 2:
                         logger.info("IRN: LLM and QR match")
                         content["irn"] = irn
                     else:
@@ -1085,7 +1085,7 @@ async def info(files:UploadFile=File(...)):
                     distance = Levenshtein.distance(hiibgst, qr_hiibgst)
                     logger.info(f"Levenshtein distance LLM vs QR dealergst: {distance}")
 
-                    if distance == 0:
+                    if distance <=2:
                         logger.info("IRN: LLM and QR match")
                         content["hiib_gstin"] = hiibgst
                     else:
@@ -1164,7 +1164,7 @@ async def info(files:UploadFile=File(...)):
                     distance = Levenshtein.distance(dealer_gstin, qr_dealergst)
                     logger.info(f"Levenshtein distance LLM vs QR dealergst: {distance}")
 
-                    if distance == 0:
+                    if distance <=2:
                         logger.info("IRN: LLM and QR match")
                         content["dealer_gstin"] = dealer_gstin
                     else:
@@ -1227,7 +1227,6 @@ async def info(files:UploadFile=File(...)):
                 current_val = extracted_content.get(key)
                 if current_val == "" or current_val == 0.0 or current_val == 0:
                     extracted_content[key] = value
-                    logger.info(f"Appended field '{key}' to extracted_content")
                 else:
                     logger.info(f"Field '{key}' is already set (value: {current_val})")
 
