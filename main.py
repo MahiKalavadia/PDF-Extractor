@@ -333,20 +333,48 @@ prompt ="""
                   - If not visible then zoom yourself and identify which letter or digit and extract it
                   5. invoice_date: Invoice date , format -> DD-MM-YYYY
                   # Amount related details:
+                  - Look at taxable value and total invoice value and then look for cgst, sgst and igst amount and if only igst given compare taxable value + igst amount is it equal to toal invoice value
+                  - If sgst and cgst given then see: taxable value + cgst + sgst is equal to total invoice value
+                  - If some error like actual total invoice amount is less than the comparing one then look at the file again and extract 
                   1. taxable_value:
                   - Amount before GST got added
                   2. cgst_amount: 
+                     - Never mistake IGST Amount for CGST  if confused return emoty string
+                     - Look in tax summary, GST summary etc.
+                     - Example 1: CGST Amount 9% 450
+                        Output: 450
+                     - Example 2: CGST Amount 9% 0
+                        Output: 0
                   3. sgst_amount: 
+                     - Look in tax summary, GST summary etc.
+                     - Example 1: SGST Amount 9% 450
+                        Output: 450
+                     - Example 2: SGST Amount 9% 0
+                        Output: 0
                   4. igst_amount: 
                   5. total_invoice_value: 
                   - Amount total after adding GST values
                   # Dealer and Buyer code:
                   1. dealer_code:
                   - look for compressed/concatenated values or mentioned as Dealer Code or DEALER CODE
+                  - It can be present in remarks section length is 5 and format is AXXXX where A means alphabet and X means digit.
                   - It is always present so look clearly, if possible zoom and extract its value
+                  -  Return only the OEM value, not the label.
+                  - If Remarks like this then:
+                        MISP Code :- HIIB-MHY-0153 Ref. Bill No.OEM-Maruti/W3257  Date:25/12/2024 Motor Insurance Distributi on Fee For the month of Nov-2024, Dealer Bank Details Bank A/C: 50200061134750 Bank Name: HDFC BANK Branch: Shop No.UG-8 to 10 Chandi Chowk Complex, Nr. Reliance Township Piplod, Surat-395007 Bank IFSC: HDFC0001705 MCIR - 395240019
+                        Separate at whitespaces. 
+                        Here Dealer code is W3257
+                  - Example: Invoice No. HMI-NOV-2024-15A Acknowledgement No 132420590330206
+                            Invoice Date: 16 Dec 2024 Acknowledgement Date 16 Dec 2024
+                            HIIB MISP Code: HIIB-MHY-0033 OEM Hyundai
+                            Dealer Code: N2A04 Period of Service: November 2024
+                        - Here N2A04 is dealer code
+                 - Example: DEALER CODE-N4229, OEM NAME-HYUNDAI  , dealer code is N4229
                   2.hiib_misp_code:
                   - format HIIB-MHY-XXXX. If found as MHY-XXXX, prepend "HIIB-"
                   - it can be mentioned as HIIB-MISP-Code or HIIB-MISP or MISP-code
+                  - Example: HIIB MISP CODE-MHY-0544
+                    So, print in output as HIIB-MHY-0544
                   # Bank details
                   Example: Company's Bank details
                   Ac. Holders name: NATASHA AUTOMOBILES PRIVATE LIMITED
@@ -361,17 +389,63 @@ prompt ="""
                         - Here, in example above, Bank of Baroda-105 is bank name.
                     3. account_number:
                         - Here in the example above, 30490500000105 is the account number
+                        - Example: 11252320000097 this is the account number
                     4. branch:
                         - Here in the example above, IZZA ITANAGAR BAREILLY is our branch name
                     5. bank_ifsc_code:
                         - Here in the example above, BARB0IZZATN is our bank ifsc code
                     # Other details:
                     1. micr_code:
-                    2. msme: Extract MSME Code/MSEME Code
+                    2. msme: 
+                      - Search entire document for MSME, MSEME, UDYAM.
+                      - Value of MSME can start with UDYAM(so search for that)
+                      - MSME values maybe split across multiple lines.
+                      - Ignore line breaks while extracting values
+                      - Search entire document including header, footer, declarations, notes, bank details, description of services, etc.
+                      - MSME must be visibly present
+                      - Example:
+                      i) MSME: UDYAM-GJ-02-0000793
+                      ii) MSEME: UDYAM-GJ-02-0090793
+                      iii) MSEME Code: UDYAM-GJ-02-0040793
+                      iv) MSMECode: UDYAM-GJ-02-0000793
+                      v) MSMECode: UDYAM-GJ-02-
+                                   0000793
+                                   Output:UDYAM-GJ-02-0000793
+                    - It can even be present inside dealer details
+                     Example: SHRI GANGA VEHICLES PVT LTD
+                               MSME :UDYAM-GJ-02-0000793
+                                OPP. SARVODAYA COLLEGE, DIDWANA
+                                ROAD, NAGAUR, Nagaur, Rajasthan, 341001
+                                GSTIN/UIN: 08AALCS3285P1ZH
+                                State Name : Rajasthan, Code : 08
+                                E-Mail : shrikrishnahyundainagaur@gmail.com
+                         - Here, MSME is present inside dealer details so extract from here.
+                    - It can even be present as cells: one cell MSME is written and cell beside this its value
+                    - If MSME not found , then search for value starting with UDYAM and if value starting with UDYAM found extract it and print it as msme
+
                     3. sac:
                     4. description: Inside the billing table
-                    5. oem: Extract oem value
+                    5. oem: - Search for OEM, O.E.M, Original Equipment Manufacturer.
+                        - OEM may be present in billing table, description section, service details section, remarks section, or dealer information section.
+                        - In Remarks section, it can be in a string continuing everything wihtout no separation concerns , so look for OEM inside and extract
+                        - If OEM value is split across multiple lines, concatenate all parts.
+                        - Ignore line breaks while extracting OEM.
+                        - Search for manufacturer names associated with the service.
+                        - Examples of OEM values: HYUNDAI, MARUTI SUZUKI, TATA MOTORS, MAHINDRA, KIA, TOYOTA, HONDA.
+                        - If "OEM Name" or "OEM" label exists, extract the value immediately associated with it.
+                        - If OCR has separated characters or words across lines, reconstruct the complete OEM value.
+                        - Return only the OEM value, not the label.
+                        - If Remarks like this then:
+                        MISP Code :- HIIB-MHY-0153 Ref. Bill No.OEM-Maruti/W3257  Date:25/12/2024 Motor Insurance Distributi on Fee For the month of Nov-2024, Dealer Bank Details Bank A/C: 50200061134750 Bank Name: HDFC BANK Branch: Shop No.UG-8 to 10 Chandi Chowk Complex, Nr. Reliance Township Piplod, Surat-395007 Bank IFSC: HDFC0001705 MCIR - 395240019
+                        Separate at whitespaces. 
+                        Here,OEM is Hyundia
                     6. quantity: How many quantity did they buy -> count its value
+                       - Look at the description of service and identify how many description are there and sum it
+                       - Example: Motor Insurance 
+                          So, Quantity is 1
+                        - Example: Motor Insurance
+                                   IGSt Amount
+                          So, Quantity is 1 , IGST Amount is not quantity
                     7. period_of_service: can be separated across several lines->concatenate them
                     # GSTIN/UIN details:
                     1. hiib_gstin:
@@ -402,9 +476,13 @@ prompt ="""
                                 State Name : Rajasthan, Code : 08
                                 E-Mail : shrigangahyundaichuru@gmail.com
                         - Look for the section where Buyer(Bill to) and Hyundia India Insurance Brooking is written and extract hiib_pincode here 331001 is hiib_pincode
-                    2. dealer_pincode : 6-digit pin from dealer address
-                    - Look for the column where Buyer(Bill To) is not written and extract pincode 
-                      Pincode: 658383
+                    2. dealer_pincode : 6-digit pincode
+                    - Look for PINCODE inside dealer section(Dealer section means the column which is not buying) and if PINCODE found extract it
+                      Example: KRISH AUTOMOBILES
+                              PAN No.: AAACN2900R
+                              PIN CODE: 275638
+                        - So, here 263139 is the pincode
+                    - If explicitly PINCODE not mentioned then search for pincode inside the address
                     - Example: SHRI GANGA VEHICLES PVT LTD
                                 NEAR DTO OFFICE, JAIPUR ROAD, CHURU,
                                 Churu, Rajasthan, 331001
