@@ -68,7 +68,7 @@ async def info(files:UploadFile=File(...)):
     through pdf2image and then extracting data and added fallback to retry extracting some values if validation fails"""
     logger.info(f"Received file: {files.filename}")
     read = await files.read()
-    images = convert_from_bytes(read, dpi=300, poppler_path=POPPLER_PATH)
+    images = convert_from_bytes(read, dpi=400, poppler_path=POPPLER_PATH)
     
     qr_irn, qr_invoice, qr_dealer_gstin, qr_hiib_gstin = extract_all_qr_data(images)
     if qr_irn:
