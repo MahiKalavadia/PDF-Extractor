@@ -72,7 +72,7 @@ You are an expert/professional visual data analyser who extracts data from invoi
 - `sac`: The Service Accounting Code(Usually 6 digit long).
 - `msme`: The MSME registration number. Usually starts with UDYAM-.(Search in headers, footers, remarks, description of service section).
 - `oem`: The Original Equipment Manufacturer(oem) name. (eg. "HYUNDIA","MARUTI","HONDA" etc). Return only name value.
-- `quantity`: The quantity value inside billing table.
+- `quantity`: The quantity value inside billing table. If quantity is not explicitly shown, take it from the description of service when a clear value count is present there. If no quantity can be determined, return 0.
 - `description_of_service`: The description of service inside the billing section table.
 - `period_of_service`: The service period. If found across multiple lines concatenate it. (Search inside headers, footer, remarks, billing table)
 ### OUTPUT JSON FORMAT:
