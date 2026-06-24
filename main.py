@@ -7,7 +7,7 @@ from pdf2image import convert_from_bytes
 from schemas import Response
 from datetime import datetime
 from validators import (
-    validate_dealercode, validate_hiibmispcode, normalize_gstin,
+    validate_dealercode, validate_hiibmispcode, 
     validate_acknow, validate_irncode, validate_statecode, validate_hiibgstin,
     validate_dealergstin, validate_account_number 
 )
@@ -71,10 +71,6 @@ async def info(files:UploadFile=File(...)):
     images = convert_from_bytes(read, dpi=400, poppler_path=POPPLER_PATH)
     
     qr_irn, qr_invoice, qr_dealer_gstin, qr_hiib_gstin = extract_all_qr_data(images)
-    if qr_hiib_gstin:
-        qr_hiib_gstin = normalize_gstin(qr_hiib_gstin)
-    if qr_dealer_gstin:
-        qr_dealer_gstin = normalize_gstin(qr_dealer_gstin)
     if qr_irn:
         logger.info(f"QR IRN found: {qr_irn}")
     if qr_invoice:
@@ -199,61 +195,59 @@ async def info(files:UploadFile=File(...)):
             content["dealer_state_code"] = ""
 
         if hiibgst:
-            hiibgst = normalize_gstin(hiibgst)
-            content["hiib_gstin"] = hiibgst
+            content["hiib_gstin"] = hiibgst.upper() if isinstance(hiibgst, str) else hiibgst
 
             llm_valid = validate_hiibgstin(hiibgst)
             qr_valid = validate_hiibgstin(qr_hiib_gstin) if qr_hiib_gstin else False
 
             if qr_valid:
                 if llm_valid:
-                    distance = Levenshtein.distance(hiibgst, qr_hiib_gstin)
+                    distance = Levenshtein.distance(hiibgst.upper(), qr_hiib_gstin.upper())
                     logger.info(f"Levenshtein distance LLM vs QR hiibgst: {distance}")
 
                     if distance == 0:
                         logger.info("HIIB GSTIN: LLM and QR match exactly")
-                        content["hiib_gstin"] = hiibgst
+                        content["hiib_gstin"] = hiibgst.upper()
                     elif 1 <= distance <= 3:
                         logger.info("HIIB GSTIN: Minor mismatch (distance 1-3), using QR value")
-                        content["hiib_gstin"] = qr_hiib_gstin
+                        content["hiib_gstin"] = qr_hiib_gstin.upper()
                     else:
                         logger.warning("HIIB GSTIN: Major mismatch (distance > 3), clearing value")
                         content["hiib_gstin"] = ""
                 else:
                     logger.warning("LLM hiibgst invalid, using QR hiibgst")
-                    content["hiib_gstin"] = qr_hiib_gstin
+                    content["hiib_gstin"] = qr_hiib_gstin.upper() if qr_hiib_gstin else ""
             else:
-                content["hiib_gstin"] = hiibgst if llm_valid else ""
+                content["hiib_gstin"] = hiibgst.upper() if llm_valid else ""
 
         else:
-            content["hiib_gstin"] = qr_hiib_gstin if qr_hiib_gstin and validate_hiibgstin(qr_hiib_gstin) else ""
+            content["hiib_gstin"] = qr_hiib_gstin.upper() if qr_hiib_gstin and validate_hiibgstin(qr_hiib_gstin) else ""
 
         if dealergstin:
-            dealergstin = normalize_gstin(dealergstin)
-            content["dealer_gstin"] = dealergstin
+            content["dealer_gstin"] = dealergstin.upper() if isinstance(dealergstin, str) else dealergstin
 
             llm_valid = validate_dealergstin(dealergstin)
             qr_valid = validate_dealergstin(qr_dealer_gstin) if qr_dealer_gstin else False
 
             if qr_valid:
                 if llm_valid:
-                    distance = Levenshtein.distance(dealergstin, qr_dealer_gstin)
+                    distance = Levenshtein.distance(dealergstin.upper(), qr_dealer_gstin.upper())
                     logger.info(f"Levenshtein distance LLM vs QR dealergst: {distance}")
 
                     if distance == 0:
                         logger.info("Dealer GSTIN: LLM and QR match exactly")
-                        content["dealer_gstin"] = dealergstin
+                        content["dealer_gstin"] = dealergstin.upper()
                     elif 1 <= distance <= 3:
                         logger.info("Dealer GSTIN: Minor mismatch (distance 1-3), using QR value")
-                        content["dealer_gstin"] = qr_dealer_gstin
+                        content["dealer_gstin"] = qr_dealer_gstin.upper()
                     else:
                         logger.warning("Dealer GSTIN: Major mismatch (distance > 3), clearing value")
                         content["dealer_gstin"] = ""
                 else:
                     logger.warning("LLM dealergst invalid, using QR dealergst")
-                    content["dealer_gstin"] = qr_dealer_gstin
+                    content["dealer_gstin"] = qr_dealer_gstin.upper() if qr_dealer_gstin else ""
             else:
-                content["dealer_gstin"] = dealergstin if llm_valid else ""
+                content["dealer_gstin"] = dealergstin.upper() if llm_valid else ""
 
         else:
             content["dealer_gstin"] = qr_dealer_gstin if qr_dealer_gstin and validate_dealergstin(qr_dealer_gstin) else ""
