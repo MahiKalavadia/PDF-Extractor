@@ -20,17 +20,8 @@ def verify_qr_irn(qr_irn: str) -> bool:
         logger.warning(f"QR IRN invalid (len={len(qr_irn)}): {qr_irn}")
     return is_valid
 
-# def verify_qr_invoice(qr_inv: str) -> bool:
-#     """Verify the IRN extracted from QR is a valid 64-char hex string."""
-#     if not qr_inv:
-#         logger.warning("QR Invoice verification failed: empty value")
-#         return False
-#     else:
-#         logger.info(f"QR Invoice verified: {qr_inv}")
-#         return qr_inv
-
 def verify_qr_dealergst(qr_dealergst: str) -> bool:
-    """Verify the IRN extracted from QR is a valid 64-char hex string."""
+    """Verify the Dealer GSTIN extracted from QR is valid or not"""
     qr_dealergst = verify_qr_data(qr_dealergst)
     is_valid = validate_dealergstin(qr_dealergst)
     if is_valid:
@@ -40,7 +31,7 @@ def verify_qr_dealergst(qr_dealergst: str) -> bool:
     return is_valid
 
 def verify_qr_hiibgst(qr_hiibgst: str) -> bool:
-    """Verify the IRN extracted from QR is a valid 64-char hex string."""
+    """Verify the HIIB GSTIN extracted from QR is a valid or not"""
     qr_hiibgst = verify_qr_data(qr_hiibgst)
     is_valid = validate_hiibgstin(qr_hiibgst)
     if is_valid:
